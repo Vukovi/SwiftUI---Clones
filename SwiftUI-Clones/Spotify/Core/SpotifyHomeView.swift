@@ -7,12 +7,33 @@
 
 import SwiftUI
 import SwiftfulUI
+import SwiftfulRouting
+
+// MARK: - Lako bi se od ovoga napravio view model
+@Observable
+final class SpotifyHomeViewModel {
+    let router: AnyRouter
+    
+    var currentUser: User? = nil
+    var selectedCategory: Category? = nil
+    var products: [Product] = []
+    var productRows: [ProductRow] = []
+    
+    init(router: AnyRouter) {
+        self.router = router
+    }
+}
 
 struct SpotifyHomeView: View {
     
+    // MARK: - A da hocu da koristim viewModel zakomentarisem sledecih 5 linija i dodam viewModel
     @State private var currentUser: User? = nil
     @State private var selectedCategory: Category? = nil
     @State private var products: [Product] = []
+    @State private var productRows: [ProductRow] = []
+    @Environment(\.router) var router
+    
+//    @State var viewModel: SpotifyHomeViewModel
     
     var body: some View {
         ZStack {
@@ -28,17 +49,14 @@ struct SpotifyHomeView: View {
                     Section {
                         VStack(spacing: 16) {
                             recents
+                                .padding(.horizontal, 16)
                             
                             if let product = products.first {
                                 newReleaseProduct(product)
+                                    .padding(.horizontal, 16)
                             }
-                        }
-                        .padding(.horizontal, 16)
-                        
-                        ForEach(0..<20) { _ in
-                            Rectangle()
-                                .fill(.red)
-                                .frame(width: 200, height: 200)
+                            
+                            listRows
                         }
                     } header: {
                         header
@@ -58,9 +76,19 @@ struct SpotifyHomeView: View {
     }
     
     private func getData() async {
+        guard products.isEmpty else { return }
         do {
             currentUser = try await DatabaseHelper().getUsers().first
             products = try await Array(DatabaseHelper().getProducts().prefix(8))
+            
+            var rows: [ProductRow] = []
+            let allBrands = Set(products.map({ $0.brand }))
+            for brand in allBrands {
+                let brandProducts = products.filter { $0.brand == brand }
+                rows.append(ProductRow(title: brand, products: brandProducts))
+            }
+            productRows = rows
+            
         } catch {
             
         }
@@ -74,7 +102,7 @@ struct SpotifyHomeView: View {
                         .background(.spotifyWhite)
                         .clipShape(Circle())
                         .onTapGesture {
-                            
+                            router.dismissScreen()
                         }
                 }
             }
@@ -113,8 +141,19 @@ struct SpotifyHomeView: View {
                         imageName: product.firstImage ,
                         title: product.title
                       )
+                     .asButton(.press) {
+                          goToPlaylistView(product: product)
+                     }
                 }
             }
+    }
+    
+    private func goToPlaylistView(product: Product) {
+        guard let user = currentUser else { return }
+        
+        router.showScreen(.push) { _ in
+            SpotifyPlaylistView(product: product, user: user)
+        }
     }
     
     private func newReleaseProduct(_ product: Product) -> some View {
@@ -126,13 +165,45 @@ struct SpotifyHomeView: View {
             subHeadline: product.category,
             title: product.title,
             subtitle: product.description) {
-                
+                 
             } onPlayPressed: {
-                
+                goToPlaylistView(product: product)
             }
+    }
+    
+    private var listRows: some View {
+        ForEach(productRows) { row in
+            VStack(spacing: 8) {
+                Text(row.title)
+                    .font(.title)
+                    .foregroundStyle(.spotifyWhite)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        ForEach(row.products) { product in
+                            ImageTitleRowCell(
+                                imageName: product.firstImage,
+                                imageSize: 120,
+                                title: product.title
+                            )
+                            .asButton(.press) {
+                                goToPlaylistView(product: product)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
     }
 }
 
 #Preview {
-    SpotifyHomeView()
+    RouterView { _ in
+        SpotifyHomeView()
+    }
 }
